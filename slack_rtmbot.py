@@ -83,9 +83,12 @@ class RtmBot(object):
                     for help in plug_help[1]:
                         self.channel_help.append(help)
             except AttributeError:
-                logging.info("{} is a bad bad plugin and doesnt implement process_help".format(plugin))
-        self.dm_help.append("help - Will return a listing of commands the bot responds to")
-        self.channel_help.append("help - Will return a listing of commands the bot responds to")
+                logging.info(
+                    "{} is a bad bad plugin and doesnt implement process_help".format(plugin))
+        self.dm_help.append(
+            "help - Will return a listing of commands the bot responds to")
+        self.channel_help.append(
+            "help - Will return a listing of commands the bot responds to")
         return
 
     def output_help(self, channel):
@@ -94,16 +97,22 @@ class RtmBot(object):
         :param channel:
         :return:
         """
-        message = "Help for {}\n-------------------\n".format(config['BOT_NAME'])
+        message = "Help for {}\n-------------------\n".format(config[
+                                                              'BOT_NAME'])
         if len(self.dm_help) > 0:
             message = "{}DM Commands:\n-------------------\n".format(message)
             for help in self.dm_help:
                 message = "{}\n{}".format(message, help)
         if len(self.channel_help) > 0:
-            message = "{}\n\nChannel Commands:\n-------------------\n".format(message)
+            message = "{}\n\nChannel Commands:\n-------------------\n".format(
+                message)
             for help in self.channel_help:
                 message = "{}\n{}".format(message, help)
-        self.slack_client.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
+        self.slack_client.api_call(
+            "chat.postMessage",
+            channel=channel,
+            text=message,
+            as_user=True)
         return
 
     def on_start(self):
@@ -114,7 +123,6 @@ class RtmBot(object):
         function_name = "process_onstart"
         for plugin in self.bot_plugins:
             plugin.do(function_name, None)
-
 
     def input(self, data):
         """
@@ -129,7 +137,9 @@ class RtmBot(object):
             dbg("got {}".format(function_name))
             match = None
             if function_name == "process_message":
-                match = re.findall(r"{} (help|halp|help me)".format(config['BOT_NAME']), data['text'])
+                match = re.findall(
+                    r"{} (help|halp|help me)".format(
+                        config['BOT_NAME']), data['text'])
                 if data['channel'].startswith("D"):
                     function_name = "process_directmessage"
                     match = re.findall(r"(help|halp|help me)", data['text'])
@@ -211,7 +221,6 @@ class Plugin(object):
         function_name = "process_help"
         return eval("self.module." + function_name)()
 
-
     def do(self, function_name, data):
         """
         Runs a plugin if it has a function to match the data being passed to it
@@ -265,7 +274,8 @@ class Plugin(object):
         channel_help = []
         while True:
             if 'dm_help' in dir(self.module):
-                if self.module.channel_help and len(self.module.channel_help) > 0:
+                if self.module.channel_help and len(
+                        self.module.channel_help) > 0:
                     logging.info("channel_help from {}".format(self.module))
                     dm_help.append(self.module.channel_help.pop(0))
                 else:
@@ -312,7 +322,7 @@ if __name__ == "__main__":
     files_currently_downloading = []
     job_hash = {}
 
-    if config.has_key("DAEMON"):
+    if "DAEMON" in config:
         if config["DAEMON"]:
             import daemon
             with daemon.DaemonContext():

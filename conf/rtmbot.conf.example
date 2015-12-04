@@ -1,0 +1,11 @@
+DEBUG: False
+LOGPATH: ""
+LOGFILE: "rtmbot.log"
+
+SLACK_TOKEN: ""
+BOT_NAME: ""
+BOT_USER_ID: ""
+
+SUPPORT_CONTACT: ""
+
+PING_INTERVAL: .5

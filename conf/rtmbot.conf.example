@@ -1,11 +1,27 @@
-DEBUG: False
-LOGPATH: ""
-LOGFILE: "rtmbot.log"
-
+#Slack Options
 SLACK_TOKEN: ""
 BOT_NAME: ""
 BOT_USER_ID: ""
 
+#Logging options
+LOGPATH: ""
+LOGFILE: "slack_rtmbot.log"
+INPUT_LOGFILE: "inputs.log"
+
+#who someone should contact if they have a problem with your bot, can be an email or slack username
 SUPPORT_CONTACT: ""
 
+#Debig options
+DEBUG: False
+#log all inputs to the bot if true
+INPUT_LOGGING: False
+
+
+
+#Advanced options You Probably dont need to mess with these
+
+#these types will be ignored by the INPUT_LOGGING to prevent the log from being filled with useless loglines
+INPUT_DO_NOT_LOG_TYPES: ["pong","user_typing","hello","presence_change"]
+
+#how often the bot pings slack to stay alive. .5 (1/2 second) is good to prevent being ratelimited
 PING_INTERVAL: .5

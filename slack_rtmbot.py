@@ -11,7 +11,7 @@ import time
 import logging
 import re
 from threading import Thread
-
+from logging.handlers import RotatingFileHandler
 from slackclient import SlackClient
 
 
@@ -22,7 +22,7 @@ def dbg(debug_string):
     :return:
     """
     if debug:
-        logging.info(debug_string)
+        main_log.info(debug_string)
 
 
 class RtmBot(object):
@@ -47,10 +47,13 @@ class RtmBot(object):
         self.load_help()
         while True:
             for reply in self.slack_client.rtm_read():
+                self.input_logging(reply)
                 self.input(reply)
+
             self.output()
             self.autoping()
-            time.sleep(config['PING_INTERVAL'] or .1)
+            time.sleep(config['PING_INTERVAL']
+                       if "PING_INTERVAL" in config else .1)
 
     def autoping(self):
         """
@@ -83,7 +86,7 @@ class RtmBot(object):
                     for help in plug_help[1]:
                         self.channel_help.append(help)
             except AttributeError:
-                logging.info(
+                main_log.info(
                     "{} is a bad bad plugin and doesnt implement process_help".format(plugin))
         self.dm_help.append(
             "help - Will return a listing of commands the bot responds to")
@@ -109,10 +112,7 @@ class RtmBot(object):
             for help in self.channel_help:
                 message = "{}\n{}".format(message, help)
         self.slack_client.api_call(
-            "chat.postMessage",
-            channel=channel,
-            text=message,
-            as_user=True)
+            "chat.postMessage", channel=channel, text=message, as_user=True)
         return
 
     def on_start(self):
@@ -137,9 +137,8 @@ class RtmBot(object):
             dbg("got {}".format(function_name))
             match = None
             if function_name == "process_message":
-                match = re.findall(
-                    r"{} (help|halp|help me)".format(
-                        config['BOT_NAME']), data['text'])
+                match = re.findall(r"{} (help|halp|help me)".format(
+                    config['BOT_NAME']), data['text'])
                 if data['channel'].startswith("D"):
                     function_name = "process_directmessage"
                     match = re.findall(r"(help|halp|help me)", data['text'])
@@ -179,11 +178,35 @@ class RtmBot(object):
             sys.path.insert(0, directory + '/plugins/')
         for plugin in glob.glob(directory + '/plugins/*.py') + \
                 glob.glob(directory + '/plugins/*/*.py'):
-            logging.info(plugin)
+            main_log.info(plugin)
             name = plugin.split('/')[-1][:-3]
-#            try:
             self.bot_plugins.append(Plugin(name))
-#            except:
+
+    def input_logging(self, data):
+        """
+        If COMMAND_LOGGING is true in config, logs all input sent at the bot
+        This is used more for analytics then debugging. If you want
+        debugging, turn on debugging
+        :param data:
+        :return:
+        """
+        # do nothing if we havent defined command logging or it is false
+        if not "INPUT_LOGGING" in config or not config['INPUT_LOGGING']:
+            return
+
+        # dont log anytyhing that is coming from the bot itself
+        if "user" in data and data['user'] == config['BOT_USER_ID']:
+            return
+
+        # discard some logs that we just dont need
+        if data['type'] in config['INPUT_DO_NOT_LOG_TYPES']:
+            return
+
+        input_log.info("{},{},{},{}".format(
+            data['type'],
+            data['user'] if "user" in data else None,
+            data['channel'] if "channel" in data else None,
+            data['text'] if "text" in data else None))
 
 
 class Plugin(object):
@@ -193,7 +216,7 @@ class Plugin(object):
         self.module = __import__(name)
         self.outputs = []
         if name in config:
-            logging.info("config found for: " + name)
+            main_log.info("config found for: " + name)
             self.module.config = config[name]
         if 'setup' in dir(self.module):
             self.module.setup()
@@ -234,7 +257,6 @@ class Plugin(object):
                 t = Thread(
                     target=self.plugin_worker, args=(
                         function_name, data))
-
                 t.start()
             except:
                 dbg("problem in module {} {}".format(function_name, data))
@@ -249,7 +271,7 @@ class Plugin(object):
         while True:
             if 'outputs' in dir(self.module):
                 if len(self.module.outputs) > 0:
-                    logging.info("output from {}".format(self.module))
+                    main_log.info("output from {}".format(self.module))
                     output.append(self.module.outputs.pop(0))
                 else:
                     break
@@ -262,7 +284,7 @@ class Plugin(object):
         while True:
             if 'dm_help' in dir(self.module):
                 if self.module.dm_help and len(self.module.dm_help) > 0:
-                    logging.info("dm_help from {}".format(self.module))
+                    main_log.info("dm_help from {}".format(self.module))
                     dm_help.append(self.module.dm_help.pop(0))
                 else:
                     break
@@ -274,9 +296,8 @@ class Plugin(object):
         channel_help = []
         while True:
             if 'dm_help' in dir(self.module):
-                if self.module.channel_help and len(
-                        self.module.channel_help) > 0:
-                    logging.info("channel_help from {}".format(self.module))
+                if self.module.channel_help and len(self.module.channel_help) > 0:
+                    main_log.info("channel_help from {}".format(self.module))
                     dm_help.append(self.module.channel_help.pop(0))
                 else:
                     break
@@ -289,23 +310,32 @@ class UnknownChannel(Exception):
     pass
 
 
+def setup_logger(logger_name, log_file, level=logging.INFO):
+    l = logging.getLogger(logger_name)
+    formatter = logging.Formatter('%(asctime)s : %(message)s')
+    fileHandler = RotatingFileHandler(log_file, mode='a', maxBytes=(
+        config['LOGGING_MAX_SIZE'] if "LOGGING_MAX_SIZE" in config else 10485760),
+        backupCount=config[
+            'LOGGING_LOGS_TO_KEEP'] if "LOGGING_LOGS_TO_KEEP" in config else 5
+    )
+    fileHandler.setFormatter(formatter)
+
+    l.setLevel(level)
+    l.addHandler(fileHandler)
+
+
 def main_loop():
     """
     Starts up the main bot loop and listens for a keyboard interrupt to quit it
     :return:
     """
-    log_file = config['LOGPATH'] + config['LOGFILE'] or "bot.log"
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.INFO,
-        format='%(asctime)s %(message)s')
-    logging.info(directory)
+
     try:
         bot.start()
     except KeyboardInterrupt:
         sys.exit(0)
     except:
-        logging.exception('OOPS')
+        main_log.exception('OOPS')
 
 
 if __name__ == "__main__":
@@ -316,15 +346,26 @@ if __name__ == "__main__":
                                                    ))
 
     config = yaml.load(file('conf/rtmbot.conf', 'r'))
-    debug = config["DEBUG"]
+    debug = config["DEBUG"] if "DEBUG" in config else False
+    input_logging = config[
+        'INPUT_LOGGING'] if "INPUT_LOGGING" in config else False
     bot = RtmBot(config["SLACK_TOKEN"])
     site_plugins = []
-    files_currently_downloading = []
-    job_hash = {}
 
-    if "DAEMON" in config:
-        if config["DAEMON"]:
-            import daemon
-            with daemon.DaemonContext():
-                main_loop()
+    main_log_file = config[
+        'LOGPATH'] + config['LOGFILE'] if "LOGPATH" in config and "LOGFILE" else "bot.log"
+
+    setup_logger("main_logs", main_log_file, logging.INFO)
+    main_log = logging.getLogger('main_logs')
+
+    if input_logging:
+        input_log_file = config['LOGPATH'] + config[
+            'INPUT_LOGFILE'] if "LOGPATH" in config and "INPUT_LOGFILE" else "inputs.log"
+        setup_logger("input_logs", input_log_file, logging.INFO)
+        input_log = logging.getLogger('input_logs')
+
+    if "DAEMON" in config and config['DAEMON']:
+        import daemon
+        with daemon.DaemonContext():
+            main_loop()
     main_loop()

@@ -25,7 +25,7 @@ The code started as a fork of [Python rtmbot](https://github.com/slackhq/python-
 
 1. Download the slack_rtmbot framework
 
-        git clone https://github.internal.digitalocean.com/aherrington/slack_rtmbot.git
+        git clone https://github.com/andrewthetechie/slack_rtmbot.git
         cd slack_rtmbot
 
 2. Install dependencies ([virtualenv](http://virtualenv.readthedocs.org/en/latest/) is recommended.)

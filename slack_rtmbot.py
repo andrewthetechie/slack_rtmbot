@@ -255,7 +255,7 @@ class Plugin(object):
         :return:
         """
         if 'repeated_tasks' in dir(self.module):
-            for interval, task_function in self.module.repeated_tasks
+            for interval, task_function in self.module.repeated_tasks:
                 self.repeated_tasks.append(RepeatedTask(interval, eval("self.module.{}".format(task_function))))
 
     def do_tasks(self):

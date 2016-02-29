@@ -364,8 +364,4 @@ if __name__ == "__main__":
         setup_logger("input_logs", input_log_file, logging.INFO)
         input_log = logging.getLogger('input_logs')
 
-    if "DAEMON" in config and config['DAEMON']:
-        import daemon
-        with daemon.DaemonContext():
-            main_loop()
     main_loop()

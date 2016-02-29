@@ -12,16 +12,6 @@ from logging.handlers import RotatingFileHandler
 from slackclient import SlackClient
 
 
-def dbg(debug_string):
-    """
-    Used to write debugging information if debug is set in config
-    :param debug_string:
-    :return:
-    """
-    if debug:
-        main_log.info(debug_string)
-
-
 class RtmBot(object):
     def __init__(self, token):
         self.last_ping = 0
@@ -129,7 +119,7 @@ class RtmBot(object):
         """
         if "type" in data:
             function_name = "process_" + data["type"]
-            dbg("got {}".format(function_name))
+            main_log.info("got {}".format(function_name))
             if function_name == "process_message":
                 match = re.findall(r"{} (help|halp|help me)".format(
                     config['BOT_NAME']), data['text'])
@@ -281,12 +271,12 @@ class Plugin(object):
                 t = Thread(target=self.plugin_worker, args=(function_name, data))
                 t.start()
             except:
-                dbg("problem in module {} {}".format(function_name, data))
+                main_log.error("problem in module {} {}".format(function_name, data))
         if "catch_all" in dir(self.module):
             try:
                 self.module.catch_all(data)
             except:
-                dbg("problem in catch all")
+                main_log.error("problem in catch all")
 
     def do_output(self):
         output = []

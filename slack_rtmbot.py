@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-import sys
-sys.dont_write_bytecode = True
-
 import glob
 import yaml
 import os
@@ -26,7 +23,6 @@ def dbg(debug_string):
 
 
 class RtmBot(object):
-
     def __init__(self, token):
         self.last_ping = 0
         self.token = token
@@ -49,7 +45,7 @@ class RtmBot(object):
             for reply in self.slack_client.rtm_read():
                 self.input_logging(reply)
                 self.input(reply)
-
+            self.repeated_tasks()
             self.output()
             self.autoping()
             time.sleep(config['PING_INTERVAL']
@@ -76,15 +72,14 @@ class RtmBot(object):
         global dm_help
 
         for plugin in self.bot_plugins:
-            plug_help = None
             try:
                 plug_help = plugin.get_help()
                 if len(plug_help[0]) > 0:
-                    for help in plug_help[0]:
-                        self.dm_help.append(help)
+                    for plugin_help in plug_help[0]:
+                        self.dm_help.append(plugin_help)
                 if len(plug_help[1]) > 0:
-                    for help in plug_help[1]:
-                        self.channel_help.append(help)
+                    for plugin_help in plug_help[1]:
+                        self.channel_help.append(plugin_help)
             except AttributeError:
                 main_log.info(
                     "{} is a bad bad plugin and doesnt implement process_help".format(plugin))
@@ -101,16 +96,16 @@ class RtmBot(object):
         :return:
         """
         message = "Help for {}\n-------------------\n".format(config[
-                                                              'BOT_NAME'])
+                                                                  'BOT_NAME'])
         if len(self.dm_help) > 0:
             message = "{}DM Commands:\n-------------------\n".format(message)
-            for help in self.dm_help:
-                message = "{}\n{}".format(message, help)
+            for plugin_help in self.dm_help:
+                message = "{}\n{}".format(message, plugin_help)
         if len(self.channel_help) > 0:
             message = "{}\n\nChannel Commands:\n-------------------\n".format(
                 message)
-            for help in self.channel_help:
-                message = "{}\n{}".format(message, help)
+            for plugin_help in self.channel_help:
+                message = "{}\n{}".format(message, plugin_help)
         self.slack_client.api_call(
             "chat.postMessage", channel=channel, text=message, as_user=True)
         return
@@ -135,7 +130,6 @@ class RtmBot(object):
         if "type" in data:
             function_name = "process_" + data["type"]
             dbg("got {}".format(function_name))
-            match = None
             if function_name == "process_message":
                 match = re.findall(r"{} (help|halp|help me)".format(
                     config['BOT_NAME']), data['text'])
@@ -158,15 +152,23 @@ class RtmBot(object):
             limiter = False
             for output in plugin.do_output():
                 channel = self.slack_client.server.channels.find(output[0])
-                if channel is not None and output[1] != None:
-                    if limiter == True:
+                if channel is not None and output[1] is not None:
+                    if limiter:
                         time.sleep(.1)
-                        limiter = False
                     message = output[1].encode('ascii', 'ignore')
                     # channel.send_message("{}".format(message))
                     self.slack_client.api_call(
                         "chat.postMessage", channel=output[0], text=message, as_user=True)
                     limiter = True
+
+
+    def repeated_tasks(self):
+        """
+        Runs any repeated tasks for plugins
+        :return:
+        """
+        for plugin in self.bot_plugins:
+            plugin.do_tasks()
 
     def load_plugins(self):
         """
@@ -182,6 +184,7 @@ class RtmBot(object):
             name = plugin.split('/')[-1][:-3]
             self.bot_plugins.append(Plugin(name))
 
+    # noinspection PyMethodMayBeStatic
     def input_logging(self, data):
         """
         If COMMAND_LOGGING is true in config, logs all input sent at the bot
@@ -191,7 +194,7 @@ class RtmBot(object):
         :return:
         """
         # do nothing if we havent defined command logging or it is false
-        if not "INPUT_LOGGING" in config or not config['INPUT_LOGGING']:
+        if "INPUT_LOGGING" not in config or not config['INPUT_LOGGING']:
             return
 
         # dont log anytyhing that is coming from the bot itself
@@ -210,17 +213,19 @@ class RtmBot(object):
 
 
 class Plugin(object):
-
-    def __init__(self, name, plugin_config={}):
+    def __init__(self, name):
         self.name = name
         self.module = __import__(name)
         self.outputs = []
+        self.repeated_tasks = []
+        self.config_tasks()
         if name in config:
             main_log.info("config found for: " + name)
             self.module.config = config[name]
         if 'setup' in dir(self.module):
             self.module.setup()
 
+    # noinspection PyMethodMayBeStatic
     def plugin_worker(self, function_name, data):
         """
         Method used to thread plugins
@@ -234,7 +239,7 @@ class Plugin(object):
             elif data['user'] != config['BOT_USER_ID']:
                 eval("self.module." + function_name)(data)
         except KeyError:
-            return
+            eval("self.module." + function_name)()
 
     def get_help(self):
         """
@@ -243,6 +248,25 @@ class Plugin(object):
         """
         function_name = "process_help"
         return eval("self.module." + function_name)()
+
+    def config_tasks(self):
+        """
+        Grabs the repeated_tasks list from the plugin and stores it in the
+        repeated_tasks table
+        :return:
+        """
+        if 'repeated_tasks' in dir(self.module):
+            for interval, task_function in self.module.repeated_tasks:
+                self.repeated_tasks.append(RepeatedTask(interval, eval("self.module.{}".format(task_function))))
+
+    def do_tasks(self):
+        for task in self.repeated_tasks:
+            if task.check():
+                try:
+                    t = Thread(target=self.plugin_worker, args=(task.task_function(), None))
+                    t.start()
+                except:
+                    main_log.error("Error when trying to start thread for task {}".format(task.__repr__()))
 
     def do(self, function_name, data):
         """
@@ -254,9 +278,7 @@ class Plugin(object):
         if function_name in dir(self.module):
             try:
                 # stars a thread for this call to a plugin
-                t = Thread(
-                    target=self.plugin_worker, args=(
-                        function_name, data))
+                t = Thread(target=self.plugin_worker, args=(function_name, data))
                 t.start()
             except:
                 dbg("problem in module {} {}".format(function_name, data))
@@ -280,20 +302,20 @@ class Plugin(object):
         return output
 
     def do_dm_help(self):
-        dm_help = []
+        this_dm_help = []
         while True:
             if 'dm_help' in dir(self.module):
                 if self.module.dm_help and len(self.module.dm_help) > 0:
                     main_log.info("dm_help from {}".format(self.module))
-                    dm_help.append(self.module.dm_help.pop(0))
+                    this_dm_help.append(self.module.dm_help.pop(0))
                 else:
                     break
             else:
                 self.module.dm_help = []
-        return dm_help
+        return this_dm_help
 
     def do_channel_help(self):
-        channel_help = []
+        this_channel_help = []
         while True:
             if 'dm_help' in dir(self.module):
                 if self.module.channel_help and len(self.module.channel_help) > 0:
@@ -303,7 +325,41 @@ class Plugin(object):
                     break
             else:
                 self.module.channel_help = []
-        return channel_help
+        return this_channel_help
+
+
+class RepeatedTask(object):
+    def __init__(self, interval, task_function):
+        self.task_function = task_function
+        self.interval = interval
+        self.lastrun = 0
+
+    def __str__(self):
+        """
+        Returns a string representation of the task object
+        Function, Interval, LastRun
+        :return: string
+        """
+        return "{} {} {}".format(self.task_function, self.interval, self.lastrun)
+
+    def __repr__(self):
+        """
+        Returns a string representation of the task object
+        Function, Interval, LastRun
+        :return: string
+        """
+        return self.__str__()
+
+    def check(self):
+        """
+        Checks if interval has passed since last run
+        Returns true if so, false if otherwise
+        :return: boolean
+        """
+        return self.lastrun + self.interval < time.time()
+
+    def task_function(self):
+        return self.task_function
 
 
 class UnknownChannel(Exception):
@@ -313,15 +369,15 @@ class UnknownChannel(Exception):
 def setup_logger(logger_name, log_file, level=logging.INFO):
     l = logging.getLogger(logger_name)
     formatter = logging.Formatter('%(asctime)s : %(message)s')
-    fileHandler = RotatingFileHandler(log_file, mode='a', maxBytes=(
+    file_handler = RotatingFileHandler(log_file, mode='a', maxBytes=(
         config['LOGGING_MAX_SIZE'] if "LOGGING_MAX_SIZE" in config else 10485760),
-        backupCount=config[
-            'LOGGING_LOGS_TO_KEEP'] if "LOGGING_LOGS_TO_KEEP" in config else 5
-    )
-    fileHandler.setFormatter(formatter)
+                                       backupCount=config[
+                                           'LOGGING_LOGS_TO_KEEP'] if "LOGGING_LOGS_TO_KEEP" in config else 5
+                                       )
+    file_handler.setFormatter(formatter)
 
     l.setLevel(level)
-    l.addHandler(fileHandler)
+    l.addHandler(file_handler)
 
 
 def main_loop():
@@ -353,7 +409,7 @@ if __name__ == "__main__":
     site_plugins = []
 
     main_log_file = config[
-        'LOGPATH'] + config['LOGFILE'] if "LOGPATH" in config and "LOGFILE" else "bot.log"
+                        'LOGPATH'] + config['LOGFILE'] if "LOGPATH" in config and "LOGFILE" else "bot.log"
 
     setup_logger("main_logs", main_log_file, logging.INFO)
     main_log = logging.getLogger('main_logs')

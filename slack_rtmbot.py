@@ -228,7 +228,17 @@ class Plugin(object):
             elif data['user'] != config['BOT_USER_ID']:
                 eval("self.module." + function_name)(data)
         except KeyError:
-            eval("self.module." + function_name)()
+            pass
+
+    def task_worker(selfself,function_name):
+        """
+        Method used to thread repeated tasks
+        :param function_name: name of the function to run
+        :return: none
+        """
+        eval("self.module." + function_name)()
+
+
 
     def get_help(self):
         """
@@ -245,14 +255,15 @@ class Plugin(object):
         :return:
         """
         if 'repeated_tasks' in dir(self.module):
-            for interval, task_function in self.module.repeated_tasks:
+            for interval, task_function in self.module.repeated_tasks
                 self.repeated_tasks.append(RepeatedTask(interval, eval("self.module.{}".format(task_function))))
 
     def do_tasks(self):
         for task in self.repeated_tasks:
             if task.check():
                 try:
-                    t = Thread(target=self.plugin_worker, args=(task.task_function(), None))
+                    main_log.info("Starting thread for {}".format(task.__repr__()))
+                    t = Thread(target=self.task_worker, args=(task.task_function()))
                     t.start()
                 except:
                     main_log.error("Error when trying to start thread for task {}".format(task.__repr__()))

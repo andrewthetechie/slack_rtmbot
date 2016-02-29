@@ -72,7 +72,7 @@ class RtmBot(object):
                         self.channel_help.append(plugin_help)
             except AttributeError:
                 main_log.info(
-                    "{} is a bad bad plugin and doesnt implement process_help".format(plugin.__str__))
+                    "{} is a bad bad plugin and doesnt implement process_help".format(plugin.name()))
         self.dm_help.append(
             "help - Will return a listing of commands the bot responds to")
         self.channel_help.append(
@@ -215,7 +215,7 @@ class Plugin(object):
         if 'setup' in dir(self.module):
             self.module.setup()
 
-    def __str__(self):
+    def name(self):
         """
         Returns the name of the plugin
         :return: string

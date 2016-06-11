@@ -34,7 +34,7 @@ The code started as a fork of [Python rtmbot](https://github.com/slackhq/python-
 
 3. Configure slack_rtmbot (https://api.slack.com/bot-users)
         
-        cp doc/example-config/slack_rtmbot.conf conf/slack_rtmbot.conf.
+        cp conf/rtmbot.conf.example conf/slack_rtmbot.conf
         vi rtmbot.conf
           SLACK_TOKEN: "xoxb-11111111111-222222222222222"
 
